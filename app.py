@@ -21,7 +21,7 @@ import pandas as pd
 import streamlit as st
 
 st.set_page_config(page_title="Generator Output Peserta", layout="wide")
-st.title("📄 Generator Output Peserta per JENIS TES")
+st.title("📄 Generator Output Peserta per JENIS TES (20251220)")
 
 # -------------------------------------------------------------
 # Sidebar: Nilai Default
@@ -64,6 +64,25 @@ def build_ref_options(df_ref: pd.DataFrame) -> pd.DataFrame:
     ref["OPTION"] = ref["ID"] + " — " + ref["NAMA"]
     return ref
 
+@st.cache_data(show_spinner=False)
+def extract_birthdate_from_nip(nip: str) -> str:
+    """
+    Ambil tanggal lahir dari NIP (8 digit pertama).
+    Return yyyy-mm-dd atau "" jika gagal.
+    """
+    if not isinstance(nip, str):
+        return ""
+
+    nip = nip.strip()
+    if len(nip) < 8 or not nip[:8].isdigit():
+        return ""
+
+    try:
+        dt = pd.to_datetime(nip[:8], format="%Y%m%d")
+        return dt.strftime("%Y-%m-%d")
+    except Exception:
+        return ""
+    
 @st.cache_data(show_spinner=False)
 def normalize_date_scalar(x) -> str:
     """Normalisasi satu nilai tanggal ke yyyy-mm-dd. Tidak valid -> "" (kosong)."""
@@ -201,15 +220,23 @@ if (peserta_up is not None and peserta_sheet is not None) and (ref_up is not Non
         st.stop()
 
     # --- Bangun DF kerja standar --->
+    tgl_lahir_raw = normalize_date_series(df_peserta[required_map["TGL_LAHIR"]])
     nip_series = df_peserta[required_map["NO_PESERTA"]].astype(str).str.strip()
     # Jaga leading zero NIP
     nip_series = nip_series.apply(lambda s: re.sub(r"\.0$", "", s))
+    tgl_from_nip = nip_series.apply(extract_birthdate_from_nip)
 
+    tgl_lahir_final = tgl_lahir_raw.where(
+        tgl_lahir_raw.str.len() > 0,
+        tgl_from_nip
+    ).replace("", "1900-01-01")
+
+    #st.write(tgl_lahir_final)
     work = pd.DataFrame({
         "NIP": nip_series,
         "NAMA": df_peserta[required_map["NAMA"]].astype(str).str.strip(),
         "TMPT_LAHIR": df_peserta[required_map["TMPT_LAHIR"]].astype(str).str.strip(),
-        "TGL_LAHIR": normalize_date_series(df_peserta[required_map["TGL_LAHIR"]]),
+        "TGL_LAHIR": tgl_lahir_final,
         "JENIS_TES": df_peserta[required_map["JENIS_TES"]].astype(str).str.strip(),
     })
 
